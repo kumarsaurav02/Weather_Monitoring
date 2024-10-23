@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Weather Monitoring System</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f0f0f0;
+            margin: 0;
+            padding: 20px;
+        }
+        h1 {
+            text-align: center;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+        .weather-data, .summary, .alerts {
+            margin-bottom: 20px;
+        }
+        .weather-data h2, .summary h2, .alerts h2 {
+            margin-top: 0;
+        }
+        .alert {
+            color: red;
+            font-weight: bold;
+        }
+        .summary-item {
+            margin: 5px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>Weather Monitoring System</h1>
+    <div class="container">
+        <div class="weather-data">
+            <h2>Current Weather Data:</h2>
+            <div id="weather-info"></div>
+        </div>
+        <div class="summary">
+            <h2>Daily Summary:</h2>
+            <div id="summary-info"></div>
+        </div>
+        <div class="alerts">
+            <h2>Alerts:</h2>
+            <div id="alert-info"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_KEY = '0f9c36bcd83d0dd700d0be4d83877a72'; 
+        const CITIES = ['Delhi', 'Mumbai', 'Chennai', 'Bangalore', 'Kolkata', 'Hyderabad'];
+        const TEMP_THRESHOLD = 35;
+        const ALERT_THRESHOLD_COUNT = 2; // Number of consecutive breaches to trigger an alert
+        let weatherData = [];
+        let dailySummaries = {};
+        let alertCounts = {}; // Tracks consecutive breaches for each city
+
+        async function fetchWeatherData(city) {
+            const url = `https://api.openweathermap.org/data/2.5/weather?q=${city}&appid=${API_KEY}`;
+            try {
+                const response = await fetch(url);
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                const data = await response.json();
+                const tempInCelsius = kelvinToCelsius(data.main.temp);
+                return {
+                    city: city,
+                    main: data.weather[0].main,
+                    temp: tempInCelsius,
+                    feels_like: kelvinToCelsius(data.main.feels_like),
+                    dt: new Date(data.dt * 1000).toLocaleString()
+                };
+            } catch (error) {
+                console.error(`Failed to fetch data for ${city}:`, error);
+                return null;
+            }
+        }
+
+        function kelvinToCelsius(kelvin) {
+            return kelvin - 273.15;
+        }
+
+        async function updateWeather() {
+            const weatherInfo = document.getElementById('weather-info');
+            weatherInfo.innerHTML = 'Loading weather data...';
+            weatherData = [];
+
+            for (const city of CITIES) {
+                const data = await fetchWeatherData(city);
+                if (data) {
+                    weatherData.push(data);
+                    displayWeatherData(data);
+                    checkForAlert(data);
+                }
+            }
+
+            generateDailySummary();
+        }
+
+        function displayWeatherData(data) {
+            const weatherInfo = document.getElementById('weather-info');
+            weatherInfo.innerHTML += `
+                <p><strong>${data.city}</strong>: ${data.main}, Temp: ${data.temp.toFixed(2)}°C, Feels like: ${data.feels_like.toFixed(2)}°C (Updated: ${data.dt})</p>
+            `;
+        }
+
+        function checkForAlert(data) {
+            const city = data.city;
+            if (data.temp > TEMP_THRESHOLD) {
+                alertCounts[city] = (alertCounts[city] || 0) + 1;
+                if (alertCounts[city] >= ALERT_THRESHOLD_COUNT) {
+                    displayAlert(`Temperature Alert! ${city} is currently at ${data.temp.toFixed(2)}°C, exceeding the threshold of ${TEMP_THRESHOLD}°C.`);
+                    alertCounts[city] = 0; // Reset after alerting
+                }
+            } else {
+                alertCounts[city] = 0; // Reset if conditions are normal
+            }
+        }
+
+        function displayAlert(message) {
+            const alertInfo = document.getElementById('alert-info');
+            alertInfo.innerHTML += `<p class="alert">${message}</p>`;
+        }
+
+        function generateDailySummary() {
+            const today = new Date().toLocaleDateString();
+            if (!dailySummaries[today]) {
+                dailySummaries[today] = {
+                    temps: [],
+                    conditions: []
+                };
+            }
+
+            for (const data of weatherData) {
+                dailySummaries[today].temps.push(data.temp);
+                dailySummaries[today].conditions.push(data.main);
+            }
+
+            const temps = dailySummaries[today].temps;
+            const avgTemp = temps.reduce((acc, cur) => acc + cur, 0) / temps.length;
+            const maxTemp = Math.max(...temps);
+            const minTemp = Math.min(...temps);
+            const dominantWeather = findDominantWeather(dailySummaries[today].conditions);
+
+            displaySummary(avgTemp, maxTemp, minTemp, dominantWeather);
+        }
+
+        function findDominantWeather(conditions) {
+            const conditionCounts = conditions.reduce((acc, condition) => {
+                acc[condition] = (acc[condition] || 0) + 1;
+                return acc;
+            }, {});
+            return Object.keys(conditionCounts).reduce((a, b) => conditionCounts[a] > conditionCounts[b] ? a : b);
+        }
+
+        function displaySummary(avgTemp, maxTemp, minTemp, dominantWeather) {
+            const summaryInfo = document.getElementById('summary-info');
+            summaryInfo.innerHTML = `
+                <p class="summary-item">Average Temperature: ${avgTemp.toFixed(2)}°C</p>
+                <p class="summary-item">Maximum Temperature: ${maxTemp.toFixed(2)}°C</p>
+                <p class="summary-item">Minimum Temperature: ${minTemp.toFixed(2)}°C</p>
+                <p class="summary-item">Dominant Weather Condition: ${dominantWeather}</p>
+            `;
+        }
+
+        updateWeather();
+        setInterval(updateWeather, 300000); // Refresh every 5 minutes (300,000 ms)
+    </script>
+</body>
+</html>
